@@ -2,11 +2,12 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'ESX Garage Script'
-description 'Système de garage avec DUI et téléportation IPL pour véhicules, bateaux et avions'
-version '1.0.0'
+description 'Système de garage simple avec ox_lib pour véhicules, bateaux et avions'
+version '2.0.0'
 
 shared_scripts {
     '@es_extended/imports.lua',
+    '@ox_lib/init.lua',
     'config.lua'
 }
 
@@ -21,5 +22,8 @@ server_scripts {
 
 dependencies {
     'es_extended',
-    'oxmysql'
+    'oxmysql',
+    'ox_lib'
 }
+
+lua54 'yes'
