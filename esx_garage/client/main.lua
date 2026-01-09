@@ -23,6 +23,17 @@ Citizen.CreateThread(function()
     end
 
     PlayerData = ESX.GetPlayerData()
+
+    -- Charger les IPL nécessaires pour les garages
+    -- IPL du garage sous-terrain (commissariat)
+    RequestIpl("v_tunnel_hole")
+
+    -- IPL pour le hangar
+    RequestIpl("imp_dt1_02_cargarage_a")
+    RequestIpl("imp_dt1_02_cargarage_b")
+    RequestIpl("imp_dt1_02_cargarage_c")
+
+    print('^2[ESX GARAGE]^7 IPL de garages chargés')
 end)
 
 RegisterNetEvent('esx:playerLoaded')
@@ -151,10 +162,22 @@ function TeleportEffect(callback)
         callback()
     end
 
+    -- Attendre que le monde soit chargé
+    local coords = GetEntityCoords(ped)
+    RequestCollisionAtCoord(coords.x, coords.y, coords.z)
+
+    local timeout = 0
+    while not HasCollisionLoadedAroundEntity(ped) and timeout < 100 do
+        Citizen.Wait(50)
+        timeout = timeout + 1
+    end
+
     Citizen.Wait(500)
 
-    -- Effet de fade in
-    DoScreenFadeIn(800)
+    -- Effet de fade in (forcer même si timeout)
+    if IsScreenFadedOut() then
+        DoScreenFadeIn(800)
+    end
 end
 
 -- Fonction pour spawner un véhicule avec effet
@@ -221,6 +244,9 @@ function OpenGarage(garage)
             SetEntityCoords(ped, iplConfig.Interior.x, iplConfig.Interior.y, iplConfig.Interior.z)
             SetEntityHeading(ped, iplConfig.Interior.w)
             inGarageInterior = true
+
+            -- Attendre un petit peu que la position soit bien set
+            Citizen.Wait(100)
 
             -- Spawner le premier véhicule
             if currentVehicles[selectedVehicleIndex] then
