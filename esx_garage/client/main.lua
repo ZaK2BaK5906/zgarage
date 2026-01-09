@@ -347,7 +347,7 @@ function StoreVehicle(garage)
         return
     end
 
-    local plate = GetVehicleNumberPlateText(vehicle)
+    local plate = ESX.Math.Trim(GetVehicleNumberPlateText(vehicle))
 
     ESX.TriggerServerCallback('esx_garage:storeVehicle', function(success)
         if success then

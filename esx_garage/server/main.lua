@@ -54,32 +54,48 @@ ESX.RegisterServerCallback('esx_garage:storeVehicle', function(source, cb, plate
         return
     end
 
-    local query = ''
-    local params = {
+    -- Trim la plaque pour éviter les problèmes d'espaces
+    plate = string.gsub(plate, '^%s*(.-)%s*$', '%1')
+
+    print('^3[ESX GARAGE DEBUG] Tentative de rangement - Plaque: "' .. plate .. '" | Type garage: ' .. type .. '^7')
+
+    -- Vérifier si le véhicule appartient au joueur (sans filtrer par type pour plus de flexibilité)
+    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = @owner AND TRIM(plate) = @plate', {
         ['@owner'] = xPlayer.identifier,
         ['@plate'] = plate
-    }
-
-    if type == 'boat' then
-        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND type = @type'
-        params['@type'] = 'boat'
-    elseif type == 'plane' then
-        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND type = @type'
-        params['@type'] = 'aircraft'
-    else
-        -- Pour les voitures, accepter tous les types (car, vehicle, NULL, vide)
-        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND (type = "car" OR type = "vehicle" OR type IS NULL OR type = "")'
-    end
-
-    MySQL.Async.fetchAll(query, params, function(result)
+    }, function(result)
         if result and result[1] then
-            MySQL.Async.execute('UPDATE owned_vehicles SET stored = 1 WHERE owner = @owner AND plate = @plate', {
-                ['@owner'] = xPlayer.identifier,
-                ['@plate'] = plate
-            }, function(rowsChanged)
-                cb(true)
-            end)
+            -- Vérifier que le type du garage correspond au type du véhicule (si défini)
+            local vehicleType = result[1].type
+            local vehicleTypeDisplay = vehicleType or 'NULL'
+            local canStore = false
+
+            print('^3[ESX GARAGE DEBUG] Véhicule trouvé - Type BDD: "' .. vehicleTypeDisplay .. '"^7')
+
+            if type == 'boat' and vehicleType == 'boat' then
+                canStore = true
+            elseif type == 'plane' and vehicleType == 'aircraft' then
+                canStore = true
+            elseif type == 'car' and (vehicleType == 'car' or vehicleType == 'vehicle' or vehicleType == nil or vehicleType == '') then
+                canStore = true
+            end
+
+            if canStore then
+                print('^2[ESX GARAGE DEBUG] Rangement autorisé !^7')
+                MySQL.Async.execute('UPDATE owned_vehicles SET stored = 1 WHERE owner = @owner AND TRIM(plate) = @plate', {
+                    ['@owner'] = xPlayer.identifier,
+                    ['@plate'] = plate
+                }, function(rowsChanged)
+                    cb(true)
+                end)
+            else
+                -- Mauvais type de garage
+                print('^1[ESX GARAGE DEBUG] Mauvais type de garage !^7')
+                cb(false)
+            end
         else
+            -- Véhicule pas trouvé ou pas au joueur
+            print('^1[ESX GARAGE DEBUG] Véhicule non trouvé dans la BDD !^7')
             cb(false)
         end
     end)
@@ -94,7 +110,10 @@ AddEventHandler('esx_garage:setVehicleState', function(plate, state)
         return
     end
 
-    MySQL.Async.execute('UPDATE owned_vehicles SET stored = @stored WHERE owner = @owner AND plate = @plate', {
+    -- Trim la plaque pour éviter les problèmes d'espaces
+    plate = string.gsub(plate, '^%s*(.-)%s*$', '%1')
+
+    MySQL.Async.execute('UPDATE owned_vehicles SET stored = @stored WHERE owner = @owner AND TRIM(plate) = @plate', {
         ['@owner'] = xPlayer.identifier,
         ['@plate'] = plate,
         ['@stored'] = state
