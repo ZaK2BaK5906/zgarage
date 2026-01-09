@@ -5,7 +5,7 @@ TriggerEvent('esx:getSharedObject', function(obj)
 end)
 
 -- Récupérer les véhicules du joueur
-ESX.RegisterServerCallback('esx_garage:getVehicles', function(source, cb, type)
+ESX.RegisterServerCallback('esx_garage:getVehicles', function(source, cb, type, isSociety, jobName)
     local xPlayer = ESX.GetPlayerFromId(source)
 
     if not xPlayer then
@@ -15,19 +15,40 @@ ESX.RegisterServerCallback('esx_garage:getVehicles', function(source, cb, type)
 
     local vehicles = {}
     local query = ''
-    local params = {
-        ['@owner'] = xPlayer.identifier
-    }
+    local params = {}
 
-    if type == 'boat' then
-        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1'
-        params['@type'] = 'boat'
-    elseif type == 'plane' then
-        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1'
-        params['@type'] = 'aircraft'
+    if isSociety and jobName then
+        -- Véhicules d'entreprise (société)
+        params = {
+            ['@job'] = jobName
+        }
+
+        if type == 'boat' then
+            query = 'SELECT * FROM owned_vehicles WHERE owner = @job AND type = @type AND stored = 1'
+            params['@type'] = 'boat'
+        elseif type == 'plane' then
+            query = 'SELECT * FROM owned_vehicles WHERE owner = @job AND type = @type AND stored = 1'
+            params['@type'] = 'aircraft'
+        else
+            -- Pour les voitures, accepter 'car', NULL, vide ou 'vehicle'
+            query = 'SELECT * FROM owned_vehicles WHERE owner = @job AND (type = "car" OR type = "vehicle" OR type IS NULL OR type = "") AND stored = 1'
+        end
     else
-        -- Pour les voitures, accepter 'car', NULL, vide ou 'vehicle'
-        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND (type = "car" OR type = "vehicle" OR type IS NULL OR type = "") AND stored = 1'
+        -- Véhicules personnels
+        params = {
+            ['@owner'] = xPlayer.identifier
+        }
+
+        if type == 'boat' then
+            query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1'
+            params['@type'] = 'boat'
+        elseif type == 'plane' then
+            query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1'
+            params['@type'] = 'aircraft'
+        else
+            -- Pour les voitures, accepter 'car', NULL, vide ou 'vehicle'
+            query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND (type = "car" OR type = "vehicle" OR type IS NULL OR type = "") AND stored = 1'
+        end
     end
 
     MySQL.Async.fetchAll(query, params, function(result)
@@ -46,7 +67,7 @@ ESX.RegisterServerCallback('esx_garage:getVehicles', function(source, cb, type)
 end)
 
 -- Ranger un véhicule
-ESX.RegisterServerCallback('esx_garage:storeVehicle', function(source, cb, plate, type)
+ESX.RegisterServerCallback('esx_garage:storeVehicle', function(source, cb, plate, type, isSociety, jobName)
     local xPlayer = ESX.GetPlayerFromId(source)
 
     if not xPlayer then
@@ -59,31 +80,61 @@ ESX.RegisterServerCallback('esx_garage:storeVehicle', function(source, cb, plate
 
     print('^3[ESX GARAGE DEBUG] Tentative de rangement - Plaque: "' .. plate .. '" | Type garage: ' .. type .. '^7')
 
-    -- Vérifier si le véhicule appartient au joueur (sans filtrer par type pour plus de flexibilité)
-    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = @owner AND TRIM(plate) = @plate', {
-        ['@owner'] = xPlayer.identifier,
+    -- Déterminer le propriétaire à chercher
+    local ownerSearch = xPlayer.identifier
+    if isSociety and jobName then
+        ownerSearch = jobName -- Chercher les véhicules de l'entreprise
+    end
+
+    -- Vérifier si le véhicule appartient au joueur ou à l'entreprise
+    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE TRIM(plate) = @plate', {
         ['@plate'] = plate
     }, function(result)
         if result and result[1] then
-            -- Vérifier que le type du garage correspond au type du véhicule (si défini)
+            local vehicleOwner = result[1].owner
             local vehicleType = result[1].type
             local vehicleTypeDisplay = vehicleType or 'NULL'
             local canStore = false
 
-            print('^3[ESX GARAGE DEBUG] Véhicule trouvé - Type BDD: "' .. vehicleTypeDisplay .. '"^7')
+            print('^3[ESX GARAGE DEBUG] Véhicule trouvé - Propriétaire: "' .. vehicleOwner .. '" | Type BDD: "' .. vehicleTypeDisplay .. '"^7')
 
+            -- Vérifier le propriétaire
+            local ownerMatch = false
+            if isSociety and jobName then
+                -- Pour les garages société, accepter les véhicules du job OU du joueur
+                ownerMatch = (vehicleOwner == jobName or vehicleOwner == xPlayer.identifier)
+            else
+                -- Pour les garages perso, seulement les véhicules du joueur
+                ownerMatch = (vehicleOwner == xPlayer.identifier)
+            end
+
+            if not ownerMatch then
+                print('^1[ESX GARAGE DEBUG] Le véhicule n\'appartient pas au joueur/société !^7')
+                cb(false)
+                return
+            end
+
+            -- Vérifier le type de véhicule
             if type == 'boat' and vehicleType == 'boat' then
                 canStore = true
             elseif type == 'plane' and vehicleType == 'aircraft' then
                 canStore = true
-            elseif type == 'car' and (vehicleType == 'car' or vehicleType == 'vehicle' or vehicleType == nil or vehicleType == '') then
+            elseif type == 'vehicle' and (vehicleType == 'car' or vehicleType == 'vehicle' or vehicleType == nil or vehicleType == '') then
                 canStore = true
             end
 
             if canStore then
                 print('^2[ESX GARAGE DEBUG] Rangement autorisé !^7')
-                MySQL.Async.execute('UPDATE owned_vehicles SET stored = 1 WHERE owner = @owner AND TRIM(plate) = @plate', {
-                    ['@owner'] = xPlayer.identifier,
+
+                -- Si c'est un garage société et que le véhicule appartient au joueur, le transférer à la société
+                local newOwner = vehicleOwner
+                if isSociety and jobName and vehicleOwner == xPlayer.identifier then
+                    newOwner = jobName
+                    print('^3[ESX GARAGE DEBUG] Transfert du véhicule vers la société ' .. jobName .. '^7')
+                end
+
+                MySQL.Async.execute('UPDATE owned_vehicles SET stored = 1, owner = @newowner WHERE TRIM(plate) = @plate', {
+                    ['@newowner'] = newOwner,
                     ['@plate'] = plate
                 }, function(rowsChanged)
                     cb(true)
@@ -94,7 +145,7 @@ ESX.RegisterServerCallback('esx_garage:storeVehicle', function(source, cb, plate
                 cb(false)
             end
         else
-            -- Véhicule pas trouvé ou pas au joueur
+            -- Véhicule pas trouvé
             print('^1[ESX GARAGE DEBUG] Véhicule non trouvé dans la BDD !^7')
             cb(false)
         end
@@ -159,6 +210,47 @@ RegisterCommand('checkvehicles', function(source, args, rawCommand)
                 args = {'[DEBUG]', 'Aucun véhicule trouvé dans la BDD'}
             })
         end
+    end)
+end, false)
+
+-- Commande pour ajouter un véhicule d'entreprise
+RegisterCommand('addsocietycar', function(source, args, rawCommand)
+    local xPlayer = ESX.GetPlayerFromId(source)
+
+    if not xPlayer then
+        return
+    end
+
+    if not xPlayer.getGroup or xPlayer.getGroup() ~= 'admin' then
+        TriggerClientEvent('esx:showNotification', source, '~r~Vous devez être admin')
+        return
+    end
+
+    local model = args[1]
+    local job = args[2]
+
+    if not model or not job then
+        TriggerClientEvent('esx:showNotification', source, '~r~Usage: /addsocietycar [modèle] [job]')
+        TriggerClientEvent('esx:showNotification', source, '~y~Exemple: /addsocietycar police police')
+        return
+    end
+
+    local plate = string.upper(job) .. math.random(100, 999)
+
+    local vehicleProps = {
+        model = GetHashKey(model),
+        plate = plate
+    }
+
+    MySQL.Async.execute('INSERT INTO owned_vehicles (owner, plate, vehicle, type, stored) VALUES (@owner, @plate, @vehicle, @type, @stored)', {
+        ['@owner'] = job, -- Le job est le propriétaire
+        ['@plate'] = plate,
+        ['@vehicle'] = json.encode(vehicleProps),
+        ['@type'] = 'vehicle',
+        ['@stored'] = 1
+    }, function(rowsChanged)
+        TriggerClientEvent('esx:showNotification', source, '~g~Véhicule d\'entreprise ajouté: ' .. model .. ' [' .. plate .. ']')
+        print('^2[ESX GARAGE]^7 Véhicule entreprise ajouté: ' .. model .. ' pour le job ' .. job)
     end)
 end, false)
 

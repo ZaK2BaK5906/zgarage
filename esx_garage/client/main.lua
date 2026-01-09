@@ -78,6 +78,17 @@ end
 
 -- Fonction pour ouvrir le menu du garage
 function OpenGarageMenu(garageName, garage)
+    -- Vérifier le job si c'est un garage job
+    if garage.job then
+        if PlayerData.job.name ~= garage.job then
+            ESX.ShowNotification('~r~Vous n\'avez pas accès à ce garage')
+            return
+        end
+    end
+
+    -- Déterminer si c'est un garage société ou personnel
+    local isSociety = garage.society == true
+
     ESX.TriggerServerCallback('esx_garage:getVehicles', function(vehicles)
         if #vehicles == 0 then
             ESX.ShowNotification(Config.Messages.no_vehicles)
@@ -98,9 +109,14 @@ function OpenGarageMenu(garageName, garage)
                 vehicleLabel = vehicleName
             end
 
+            local description = 'Plaque: ' .. vehicle.plate
+            if isSociety then
+                description = description .. ' [ENTREPRISE]'
+            end
+
             table.insert(options, {
                 title = vehicleLabel,
-                description = 'Plaque: ' .. vehicle.plate,
+                description = description,
                 icon = 'car',
                 onSelect = function()
                     TakeOutVehicle(vehicle, garage)
@@ -116,13 +132,19 @@ function OpenGarageMenu(garageName, garage)
         })
 
         lib.showContext('garage_menu')
-    end, garage.type)
+    end, garage.type, isSociety, garage.job)
 end
 
 -- Fonction pour sortir le véhicule du garage
 function TakeOutVehicle(vehicleData, garage)
     local ped = PlayerPedId()
     local spawnCoords = garage.spawnPoint
+
+    -- Vérifier si un véhicule est déjà présent
+    ESX.Game.DeleteVehicle(GetClosestVehicle(spawnCoords.x, spawnCoords.y, spawnCoords.z, 3.0, 0, 71))
+
+    -- Attendre un peu
+    Citizen.Wait(100)
 
     -- Spawner le véhicule
     local vehicle = SpawnVehicle(
@@ -132,6 +154,14 @@ function TakeOutVehicle(vehicleData, garage)
         vehicleData.plate,
         vehicleData.vehicle
     )
+
+    if not DoesEntityExist(vehicle) then
+        ESX.ShowNotification('~r~Erreur lors du spawn du véhicule')
+        return
+    end
+
+    -- Attendre que le véhicule soit bien spawn
+    Citizen.Wait(100)
 
     -- Mettre le joueur dedans
     TaskWarpPedIntoVehicle(ped, vehicle, -1)
@@ -154,6 +184,10 @@ function StoreVehicle(garage)
 
     local plate = ESX.Math.Trim(GetVehicleNumberPlateText(vehicle))
 
+    -- Déterminer si c'est un garage société
+    local isSociety = garage.society == true
+    local jobName = garage.job or nil
+
     ESX.TriggerServerCallback('esx_garage:storeVehicle', function(success)
         if success then
             DeleteEntity(vehicle)
@@ -161,7 +195,7 @@ function StoreVehicle(garage)
         else
             ESX.ShowNotification(Config.Messages.not_owned)
         end
-    end, plate, garage.type)
+    end, plate, garage.type, isSociety, jobName)
 end
 
 -- Thread principal pour l'interaction avec les garages

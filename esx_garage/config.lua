@@ -261,6 +261,42 @@ Config.Garages = {
         spawnPoint = vec4(1740.224121, 3277.740723, 40.191553, 144.566910),
         duiText = 'HANGAR\nTREVOR'
     },
+
+    --──────────────────────────────────────────────────────────────────────────
+    -- GARAGES JOB / ENTREPRISE
+    --──────────────────────────────────────────────────────────────────────────
+    ['Police Garage'] = {
+        type = 'vehicle',
+        job = 'police', -- Seuls les police peuvent sortir les véhicules
+        coords = vec3(452.6, -1017.4, 28.4),
+        spawnPoint = vec4(438.4, -1018.3, 27.7, 90.0),
+        duiText = 'GARAGE\nPOLICE',
+        society = true -- Véhicules d'entreprise (plaques uniques)
+    },
+    ['Ambulance Garage'] = {
+        type = 'vehicle',
+        job = 'ambulance',
+        coords = vec3(307.0, -1433.0, 29.8),
+        spawnPoint = vec4(297.0, -1429.5, 29.8, 227.0),
+        duiText = 'GARAGE\nAMBULANCE',
+        society = true
+    },
+    ['Mécano Garage'] = {
+        type = 'vehicle',
+        job = 'mechanic',
+        coords = vec3(-347.0, -133.0, 39.0),
+        spawnPoint = vec4(-371.0, -108.0, 38.7, 160.0),
+        duiText = 'GARAGE\nMECANO',
+        society = true
+    },
+    ['Taxi Garage'] = {
+        type = 'vehicle',
+        job = 'taxi',
+        coords = vec3(903.3, -191.7, 73.9),
+        spawnPoint = vec4(912.0, -178.0, 74.2, 240.0),
+        duiText = 'GARAGE\nTAXI',
+        society = true
+    },
 }
 
 -- Messages
@@ -271,4 +307,13 @@ Config.Messages = {
     vehicle_stored = 'Véhicule rangé dans le garage',
     not_owned = 'Ce véhicule ne vous appartient pas',
     store_vehicle = 'Appuyez sur ~g~E~s~ pour ranger le véhicule',
+    no_job_access = 'Vous n\'avez pas accès à ce garage',
+    vehicle_transferred = 'Véhicule transféré à l\'entreprise',
 }
+
+-- [INFO] Système de garages job:
+-- - Seuls les membres du job peuvent SORTIR les véhicules
+-- - N'importe qui peut RANGER un véhicule dans un garage job
+-- - Si tu ranges TON véhicule dans un garage job, il devient un véhicule d'entreprise
+-- - Les véhicules d'entreprise ont le nom du job comme propriétaire (ex: 'police')
+-- - Commande admin: /addsocietycar [modèle] [job] pour ajouter des véhicules d'entreprise
