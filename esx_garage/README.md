@@ -132,7 +132,47 @@ Config.DrawDistance = 10.0 -- Distance d'affichage du texte
 Config.MarkerDistance = 2.5 -- Distance pour appuyer sur E
 ```
 
-## 🔧 Commandes de développement
+## 🏢 Garages Job / Entreprise
+
+### Comment ça marche ?
+
+Le script inclut un système de **garages d'entreprise** pour les jobs (police, ambulance, mécano, taxi).
+
+**Règles :**
+- ✅ **Sortir un véhicule** = Seuls les membres du job peuvent sortir
+- ✅ **Ranger un véhicule** = N'importe qui peut ranger
+- 🔄 **Transfert automatique** : Si tu ranges TON véhicule perso dans un garage job, il devient un véhicule d'entreprise !
+
+**Avantages :**
+- Les véhicules d'entreprise ont des plaques uniques (ex: `POLICE123`)
+- Tous les membres du job peuvent les utiliser
+- Possibilité de les customiser (peinture, upgrades, etc.)
+- Les modifs sont sauvegardées
+
+### Garages job inclus
+
+- **Police** - Mission Row (452.6, -1017.4, 28.4)
+- **Ambulance** - Pillbox Hill (307.0, -1433.0, 29.8)
+- **Mécano** - Burton (-347.0, -133.0, 39.0)
+- **Taxi** - Downtown (903.3, -191.7, 73.9)
+
+## 🔧 Commandes
+
+### Commandes admin
+
+```bash
+/addsocietycar [modèle] [job] - Ajoute un véhicule d'entreprise
+```
+
+Exemples :
+```
+/addsocietycar police police
+/addsocietycar ambulance ambulance
+/addsocietycar flatbed mechanic
+/addsocietycar taxi taxi
+```
+
+### Commandes de développement
 
 Active `Config.Debug = true` dans `config.lua` :
 
