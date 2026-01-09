@@ -144,44 +144,23 @@ function Draw3DText(coords, text)
     end
 end
 
--- Fonction pour créer un effet de téléportation stylé
-function TeleportEffect(callback)
+-- Fonction de téléportation simple sans animation
+function TeleportToCoords(coords, heading)
     local ped = PlayerPedId()
-
-    -- Effet de fade out
-    DoScreenFadeOut(800)
-
-    while not IsScreenFadedOut() do
-        Citizen.Wait(0)
-    end
-
-    Citizen.Wait(500)
-
-    -- Exécuter le callback (téléportation)
-    if callback then
-        callback()
-    end
+    SetEntityCoords(ped, coords.x, coords.y, coords.z)
+    SetEntityHeading(ped, heading)
 
     -- Attendre que le monde soit chargé
-    local coords = GetEntityCoords(ped)
     RequestCollisionAtCoord(coords.x, coords.y, coords.z)
-
     local timeout = 0
     while not HasCollisionLoadedAroundEntity(ped) and timeout < 100 do
-        Citizen.Wait(50)
+        Citizen.Wait(10)
         timeout = timeout + 1
-    end
-
-    Citizen.Wait(500)
-
-    -- Effet de fade in (forcer même si timeout)
-    if IsScreenFadedOut() then
-        DoScreenFadeIn(800)
     end
 end
 
--- Fonction pour spawner un véhicule avec effet
-function SpawnVehicleWithEffect(model, coords, heading, plate, props)
+-- Fonction pour spawner un véhicule simple
+function SpawnVehicle(model, coords, heading, plate, props)
     local modelHash = GetHashKey(model)
 
     RequestModel(modelHash)
@@ -201,15 +180,6 @@ function SpawnVehicleWithEffect(model, coords, heading, plate, props)
     if props then
         ESX.Game.SetVehicleProperties(vehicle, props)
     end
-
-    -- Effet de spawn (particules)
-    RequestNamedPtfxAsset("core")
-    while not HasNamedPtfxAssetLoaded("core") do
-        Citizen.Wait(0)
-    end
-
-    UseParticleFxAssetNextCall("core")
-    StartParticleFxNonLoopedAtCoord("ent_dst_elec_fire_sp", coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 1.0, false, false, false)
 
     SetModelAsNoLongerNeeded(modelHash)
 
@@ -239,20 +209,17 @@ function OpenGarage(garage)
             iplConfig = Config.PlaneGarageIPL
         end
 
-        TeleportEffect(function()
-            local ped = PlayerPedId()
-            SetEntityCoords(ped, iplConfig.Interior.x, iplConfig.Interior.y, iplConfig.Interior.z)
-            SetEntityHeading(ped, iplConfig.Interior.w)
-            inGarageInterior = true
+        -- Téléportation simple vers le garage
+        TeleportToCoords(
+            vector3(iplConfig.Interior.x, iplConfig.Interior.y, iplConfig.Interior.z),
+            iplConfig.Interior.w
+        )
+        inGarageInterior = true
 
-            -- Attendre un petit peu que la position soit bien set
-            Citizen.Wait(100)
-
-            -- Spawner le premier véhicule
-            if currentVehicles[selectedVehicleIndex] then
-                SpawnGarageVehicle(selectedVehicleIndex, iplConfig)
-            end
-        end)
+        -- Spawner le premier véhicule
+        if currentVehicles[selectedVehicleIndex] then
+            SpawnGarageVehicle(selectedVehicleIndex, iplConfig)
+        end
     end, garage.type)
 end
 
@@ -266,7 +233,7 @@ function SpawnGarageVehicle(index, iplConfig)
     local vehicle = currentVehicles[index]
     if vehicle then
         local spawnCoords = iplConfig.SpawnPoint
-        garageVehicle = SpawnVehicleWithEffect(
+        garageVehicle = SpawnVehicle(
             vehicle.vehicle.model,
             vector3(spawnCoords.x, spawnCoords.y, spawnCoords.z),
             spawnCoords.w,
@@ -285,43 +252,39 @@ function TakeOutVehicle()
     if not currentVehicles[selectedVehicleIndex] then return end
 
     local vehicle = currentVehicles[selectedVehicleIndex]
+    local ped = PlayerPedId()
+    local spawnCoords = currentGarage.spawnPoint
 
-    TeleportEffect(function()
-        -- Téléporter le joueur à la sortie du garage
-        local ped = PlayerPedId()
-        local spawnCoords = currentGarage.spawnPoint
+    -- Téléporter le joueur à la sortie du garage
+    TeleportToCoords(vector3(spawnCoords.x, spawnCoords.y, spawnCoords.z), spawnCoords.w)
 
-        SetEntityCoords(ped, spawnCoords.x, spawnCoords.y, spawnCoords.z)
-        SetEntityHeading(ped, spawnCoords.w)
+    -- Supprimer le véhicule de l'intérieur
+    if DoesEntityExist(garageVehicle) then
+        DeleteEntity(garageVehicle)
+    end
 
-        -- Supprimer le véhicule de l'intérieur
-        if DoesEntityExist(garageVehicle) then
-            DeleteEntity(garageVehicle)
-        end
+    -- Spawner le véhicule à l'extérieur
+    spawnedVehicle = SpawnVehicle(
+        vehicle.vehicle.model,
+        vector3(spawnCoords.x, spawnCoords.y, spawnCoords.z),
+        spawnCoords.w,
+        vehicle.plate,
+        vehicle.vehicle
+    )
 
-        -- Spawner le véhicule à l'extérieur
-        spawnedVehicle = SpawnVehicleWithEffect(
-            vehicle.vehicle.model,
-            vector3(spawnCoords.x, spawnCoords.y, spawnCoords.z),
-            spawnCoords.w,
-            vehicle.plate,
-            vehicle.vehicle
-        )
+    -- Déverrouiller et mettre le joueur dedans
+    SetVehicleDoorsLocked(spawnedVehicle, 1)
+    FreezeEntityPosition(spawnedVehicle, false)
+    TaskWarpPedIntoVehicle(ped, spawnedVehicle, -1)
 
-        -- Déverrouiller et mettre le joueur dedans
-        SetVehicleDoorsLocked(spawnedVehicle, 1)
-        FreezeEntityPosition(spawnedVehicle, false)
-        TaskWarpPedIntoVehicle(ped, spawnedVehicle, -1)
+    -- Mettre à jour l'état du véhicule
+    TriggerServerEvent('esx_garage:setVehicleState', vehicle.plate, 0)
 
-        -- Mettre à jour l'état du véhicule
-        TriggerServerEvent('esx_garage:setVehicleState', vehicle.plate, 0)
+    ESX.ShowNotification(Config.Messages.vehicle_spawned)
 
-        ESX.ShowNotification(Config.Messages.vehicle_spawned)
-
-        inGarageMenu = false
-        inGarageInterior = false
-        currentGarage = nil
-    end)
+    inGarageMenu = false
+    inGarageInterior = false
+    currentGarage = nil
 end
 
 -- Fonction pour changer de véhicule dans le menu
@@ -348,19 +311,17 @@ end
 
 -- Fonction pour quitter le garage sans sortir de véhicule
 function ExitGarage()
-    TeleportEffect(function()
-        local ped = PlayerPedId()
-        SetEntityCoords(ped, currentGarage.coords.x, currentGarage.coords.y, currentGarage.coords.z)
-        SetEntityHeading(ped, currentGarage.heading)
+    -- Téléporter à la sortie
+    TeleportToCoords(currentGarage.coords, currentGarage.heading)
 
-        if DoesEntityExist(garageVehicle) then
-            DeleteEntity(garageVehicle)
-        end
+    -- Supprimer le véhicule du garage
+    if DoesEntityExist(garageVehicle) then
+        DeleteEntity(garageVehicle)
+    end
 
-        inGarageMenu = false
-        inGarageInterior = false
-        currentGarage = nil
-    end)
+    inGarageMenu = false
+    inGarageInterior = false
+    currentGarage = nil
 end
 
 -- Fonction pour ranger un véhicule
@@ -377,10 +338,8 @@ function StoreVehicle(garage)
 
     ESX.TriggerServerCallback('esx_garage:storeVehicle', function(success)
         if success then
-            TeleportEffect(function()
-                DeleteEntity(vehicle)
-                ESX.ShowNotification(Config.Messages.vehicle_stored)
-            end)
+            DeleteEntity(vehicle)
+            ESX.ShowNotification(Config.Messages.vehicle_stored)
         else
             ESX.ShowNotification(Config.Messages.not_owned)
         end
@@ -399,43 +358,54 @@ function DrawGarageMenu()
         vehicleLabel = vehicleName
     end
 
-    -- Créer le HTML pour le menu
-    local menuText = string.format(
-        '<div style="font-size: 36px;">%s</div><div style="font-size: 24px; margin-top: 20px;">%d / %d</div><div style="font-size: 20px; margin-top: 30px;">← → Pour changer<br>E pour sortir<br>Retour arrière pour quitter</div>',
-        vehicleLabel,
-        selectedVehicleIndex,
-        #currentVehicles
-    )
+    -- Fond du menu (rectangle semi-transparent)
+    DrawRect(0.5, 0.15, 0.35, 0.12, 0, 0, 0, 180)
 
-    -- Afficher le texte à l'écran
+    -- Titre du menu
     SetTextFont(4)
     SetTextProportional(1)
     SetTextScale(0.5, 0.5)
-    SetTextColour(255, 255, 255, 255)
+    SetTextColour(0, 255, 100, 255)
     SetTextDropShadow(0, 0, 0, 0, 255)
     SetTextEdge(1, 0, 0, 0, 255)
     SetTextDropShadow()
     SetTextOutline()
     SetTextCentre(1)
     SetTextEntry("STRING")
-    AddTextComponentString(vehicleLabel)
-    DrawText(0.5, 0.3)
+    AddTextComponentString("~g~GARAGE~s~")
+    DrawText(0.5, 0.105)
 
-    -- Info véhicule
+    -- Nom du véhicule
+    SetTextFont(4)
+    SetTextScale(0.6, 0.6)
+    SetTextColour(255, 255, 255, 255)
+    SetTextDropShadow()
+    SetTextOutline()
+    SetTextCentre(1)
+    SetTextEntry("STRING")
+    AddTextComponentString(vehicleLabel)
+    DrawText(0.5, 0.14)
+
+    -- Compteur véhicule
     SetTextFont(0)
     SetTextScale(0.35, 0.35)
+    SetTextColour(100, 200, 255, 255)
     SetTextCentre(1)
     SetTextEntry("STRING")
-    AddTextComponentString(string.format("~g~%d~s~ / ~g~%d", selectedVehicleIndex, #currentVehicles))
-    DrawText(0.5, 0.35)
+    AddTextComponentString(string.format("%d / %d", selectedVehicleIndex, #currentVehicles))
+    DrawText(0.5, 0.185)
 
-    -- Instructions
+    -- Zone des contrôles (bas de l'écran)
+    DrawRect(0.5, 0.92, 0.5, 0.06, 0, 0, 0, 180)
+
+    -- Instructions navigation
     SetTextFont(0)
-    SetTextScale(0.3, 0.3)
+    SetTextScale(0.35, 0.35)
+    SetTextColour(255, 255, 255, 255)
     SetTextCentre(1)
     SetTextEntry("STRING")
-    AddTextComponentString("~b~←~s~ ~b~→~s~ Pour changer  |  ~g~E~s~ pour sortir  |  ~r~RETOUR~s~ pour quitter")
-    DrawText(0.5, 0.9)
+    AddTextComponentString("~b~←~s~  Précédent  ~b~→~s~  Suivant  ~g~[E]~s~  Sortir  ~r~[RETOUR]~s~  Quitter")
+    DrawText(0.5, 0.91)
 end
 
 -- Thread principal pour l'interaction avec les garages
