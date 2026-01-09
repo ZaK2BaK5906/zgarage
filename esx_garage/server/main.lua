@@ -14,18 +14,23 @@ ESX.RegisterServerCallback('esx_garage:getVehicles', function(source, cb, type)
     end
 
     local vehicles = {}
-    local vehicleType = 'car'
+    local query = ''
+    local params = {
+        ['@owner'] = xPlayer.identifier
+    }
 
     if type == 'boat' then
-        vehicleType = 'boat'
+        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1'
+        params['@type'] = 'boat'
     elseif type == 'plane' then
-        vehicleType = 'aircraft'
+        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1'
+        params['@type'] = 'aircraft'
+    else
+        -- Pour les voitures, accepter 'car', NULL, vide ou 'vehicle'
+        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND (type = "car" OR type = "vehicle" OR type IS NULL OR type = "") AND stored = 1'
     end
 
-    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = @owner AND type = @type AND stored = 1', {
-        ['@owner'] = xPlayer.identifier,
-        ['@type'] = vehicleType
-    }, function(result)
+    MySQL.Async.fetchAll(query, params, function(result)
         if result then
             for i = 1, #result, 1 do
                 table.insert(vehicles, {
@@ -49,19 +54,24 @@ ESX.RegisterServerCallback('esx_garage:storeVehicle', function(source, cb, plate
         return
     end
 
-    local vehicleType = 'car'
+    local query = ''
+    local params = {
+        ['@owner'] = xPlayer.identifier,
+        ['@plate'] = plate
+    }
 
     if type == 'boat' then
-        vehicleType = 'boat'
+        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND type = @type'
+        params['@type'] = 'boat'
     elseif type == 'plane' then
-        vehicleType = 'aircraft'
+        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND type = @type'
+        params['@type'] = 'aircraft'
+    else
+        -- Pour les voitures, accepter tous les types (car, vehicle, NULL, vide)
+        query = 'SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND (type = "car" OR type = "vehicle" OR type IS NULL OR type = "")'
     end
 
-    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate AND type = @type', {
-        ['@owner'] = xPlayer.identifier,
-        ['@plate'] = plate,
-        ['@type'] = vehicleType
-    }, function(result)
+    MySQL.Async.fetchAll(query, params, function(result)
         if result and result[1] then
             MySQL.Async.execute('UPDATE owned_vehicles SET stored = 1 WHERE owner = @owner AND plate = @plate', {
                 ['@owner'] = xPlayer.identifier,
@@ -92,6 +102,46 @@ AddEventHandler('esx_garage:setVehicleState', function(plate, state)
         -- Optionnel : log ou autre
     end)
 end)
+
+-- Commande pour voir les véhicules dans la BDD (debug)
+RegisterCommand('checkvehicles', function(source, args, rawCommand)
+    local xPlayer = ESX.GetPlayerFromId(source)
+
+    if not xPlayer then
+        return
+    end
+
+    MySQL.Async.fetchAll('SELECT plate, type, stored FROM owned_vehicles WHERE owner = @owner', {
+        ['@owner'] = xPlayer.identifier
+    }, function(result)
+        if result then
+            print('^3[ESX GARAGE DEBUG] Véhicules de ' .. xPlayer.getName() .. ':^7')
+            TriggerClientEvent('chat:addMessage', source, {
+                color = {255, 255, 0},
+                multiline = true,
+                args = {'[DEBUG]', 'Vos véhicules dans la BDD:'}
+            })
+
+            for i = 1, #result, 1 do
+                local typeStr = result[i].type or 'NULL'
+                local storedStr = result[i].stored == 1 and 'Rangé' or 'Sorti'
+                print('^3  - Plaque: ' .. result[i].plate .. ' | Type: ' .. typeStr .. ' | État: ' .. storedStr .. '^7')
+
+                TriggerClientEvent('chat:addMessage', source, {
+                    color = {255, 255, 0},
+                    multiline = false,
+                    args = {'[DEBUG]', 'Plaque: ' .. result[i].plate .. ' | Type: ' .. typeStr .. ' | ' .. storedStr}
+                })
+            end
+        else
+            TriggerClientEvent('chat:addMessage', source, {
+                color = {255, 0, 0},
+                multiline = false,
+                args = {'[DEBUG]', 'Aucun véhicule trouvé dans la BDD'}
+            })
+        end
+    end)
+end, false)
 
 -- Commande pour ajouter un véhicule de test (pour développement)
 if Config.Debug then
